@@ -43,3 +43,4 @@ cog_stub.py
 scripts/pipeline/*.json
 scripts/pipeline/audio/*
 scripts/pipeline/transcripts/*
+models/whisperx-vad-segmentation.bin

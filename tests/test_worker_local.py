@@ -19,20 +19,20 @@ if not SAMPLE_AUDIO.is_file():
 
 import src.rp_handler as rp_handler  # noqa: E402
 
-def _fake_download_files_from_urls(job_id, urls):
-    job_dir = Path("/jobs") / job_id
+def _fake_download_to_jobs(job_id, _url):
+    job_dir = Path("/jobs") / job_id / "input_objects"
     job_dir.mkdir(parents=True, exist_ok=True)
     dst = job_dir / SAMPLE_AUDIO.name
     shutil.copy(SAMPLE_AUDIO, dst)
-    return [str(dst)]
+    return str(dst)
 
-rp_handler.download_files_from_urls = _fake_download_files_from_urls
+rp_handler._download_to_jobs = _fake_download_to_jobs
 
 def main():
     job = {
         "id": "local-test-001",
         "input": {
-            "audio_file": "https://example.com/fake.mp3",
+            "audio_file": str(SAMPLE_AUDIO.resolve()),
             "model": os.getenv("WHISPER_MODEL", "large-v3"),
             "language": os.getenv("WHISPER_LANG") or None,
             "diarization": os.getenv("WHISPER_DIARIZATION", "false").lower() == "true",
