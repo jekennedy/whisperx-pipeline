@@ -23,7 +23,8 @@ from runpod.serverless.utils.rp_validator import validate
 from runpod.serverless.utils import download_files_from_urls, rp_cleanup
 
 from src.rp_schema import INPUT_VALIDATIONS
-from src.predict import Predictor, Output
+
+import threading
 
 # Optional HF login for diarization or gated models
 from huggingface_hub import login, whoami
@@ -78,7 +79,15 @@ file_handler.setFormatter(file_formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def _detect_device():
+    try:
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    except Exception:
+        logger = logging.getLogger("rp_handler")
+        logger.warning("CUDA availability check failed; defaulting to CPU.", exc_info=True)
+        return torch.device("cpu")
+
+device = _detect_device()
 
 
 if VAD_MODEL_PATH and os.path.isfile(VAD_MODEL_PATH):
@@ -133,10 +142,29 @@ else:
     logger.info("S3/R2 env not fully set. Will return inline results only.")
 
 # -----------------------------------------------------------------------------
-# Model
+# Model (lazy initialization to avoid import-time failures)
 # -----------------------------------------------------------------------------
-MODEL = Predictor()
-MODEL.setup()
+MODEL = None
+_MODEL_LOCK = threading.Lock()
+
+def _get_model():
+    global MODEL
+    if MODEL is not None:
+        return MODEL
+    with _MODEL_LOCK:
+        if MODEL is not None:
+            return MODEL
+        try:
+            # Lazy import to avoid heavy deps at module import time
+            from src.predict import Predictor  # noqa: WPS433 (runtime import)
+            m = Predictor()
+            m.setup()
+            logging.getLogger("rp_handler").info("Predictor initialized.")
+            MODEL = m
+            return MODEL
+        except Exception:
+            logging.getLogger("rp_handler").error("Predictor initialization failed.", exc_info=True)
+            raise
 
 # -----------------------------------------------------------------------------
 # Utilities
@@ -388,7 +416,9 @@ def run(job):
         pass
 
     try:
-        result: Output = MODEL.predict(**predict_input)
+        # Ensure model is initialized lazily at first use
+        model = _get_model()
+        result = model.predict(**predict_input)
     except Exception as e:
         logger.error("WhisperX prediction failed", exc_info=True)
         return {"error": f"prediction: {e}"}
