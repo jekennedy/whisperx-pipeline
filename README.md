@@ -147,15 +147,15 @@ The worker enrolls each sample and relabels diarized segments to the most likely
 Use `scripts/pipeline/whisperx_pipeline_pyannote_api.py` to run the full pipeline locally (upload to S3/R2, invoke the RunPod endpoint, enrich with pyannote diarization, and annotate Deepgram confidence). Key CLI options:
 
 - **Storage / S3**
-  - `--s3-endpoint` (defaults to `SWAMI_STORAGE_ENDPOINT`)
-  - `--bucket` (`SWAMI_STORAGE_BUCKET`)
-  - `--access-key`, `--secret-key` (`SWAMI_STORAGE_ACCESS_KEY`, `SWAMI_STORAGE_SECRET_KEY`)
+  - `--s3-endpoint` (defaults to `STORAGE_ENDPOINT`)
+  - `--bucket` (`STORAGE_BUCKET`)
+  - `--access-key`, `--secret-key` (`STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`)
   - `--url-expiry` – presigned URL TTL (seconds)
   - `--prefix-audio`, `--prefix-transcripts` – object prefixes
   - `--force` – re-upload audio even if it exists
 - **RunPod**
-  - `--endpoint` (`SWAMI_RUNPOD_ENDPOINT`)
-  - `--api-key` (`SWAMI_RUNPOD_API_KEY`)
+  - `--endpoint` (`RUNPOD_ENDPOINT`)
+  - `--api-key` (`RUNPOD_API_KEY`)
   - `--sync` – run synchronously
   - `--debug` – print full RunPod responses
 - **Transcription Controls**

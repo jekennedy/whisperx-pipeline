@@ -15,6 +15,7 @@ from botocore.exceptions import ClientError
 import requests
 from urllib.parse import urlparse, parse_qs, urlunparse
 from requests.exceptions import HTTPError
+from dotenv import load_dotenv, find_dotenv
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -68,17 +69,17 @@ def parse_cli():
     )
     p.add_argument("file", help="Local path to enhanced audio (mp3/wav).")
     # R2 / S3
-    p.add_argument("--s3-endpoint", default=os.getenv("SWAMI_STORAGE_ENDPOINT"), help="R2/S3 endpoint URL.")
-    p.add_argument("--bucket", default=os.getenv("SWAMI_STORAGE_BUCKET"), help="R2 bucket name.")
-    p.add_argument("--access-key", default=os.getenv("SWAMI_STORAGE_ACCESS_KEY"), help="R2 access key.")
-    p.add_argument("--secret-key", default=os.getenv("SWAMI_STORAGE_SECRET_KEY"), help="R2 secret key.")
+    p.add_argument("--s3-endpoint", default=os.getenv("STORAGE_ENDPOINT"), help="R2/S3 endpoint URL.")
+    p.add_argument("--bucket", default=os.getenv("STORAGE_BUCKET"), help="R2 bucket name.")
+    p.add_argument("--access-key", default=os.getenv("STORAGE_ACCESS_KEY"), help="R2 access key.")
+    p.add_argument("--secret-key", default=os.getenv("STORAGE_SECRET_KEY"), help="R2 secret key.")
     p.add_argument("--url-expiry", type=int, default=3600, help="Presigned URL TTL seconds (default 3600).")
     p.add_argument("--prefix-audio", default="enhanced/", help="Key prefix in bucket for audio (default enhanced/).")
     p.add_argument("--prefix-transcripts", default="transcripts/", help="Key prefix in bucket for transcripts (default transcripts/).")
     p.add_argument("--force", action="store_true", help="Force re-upload even if object exists.")
     # RunPod
-    p.add_argument("--endpoint", default=os.getenv("SWAMI_RUNPOD_ENDPOINT"), help="RunPod endpoint ID.")
-    p.add_argument("--api-key", default=os.getenv("SWAMI_RUNPOD_API_KEY"), help="RunPod API key.")
+    p.add_argument("--endpoint", default=os.getenv("RUNPOD_ENDPOINT"), help="RunPod endpoint ID.")
+    p.add_argument("--api-key", default=os.getenv("RUNPOD_API_KEY"), help="RunPod API key.")
     p.add_argument("--sync", action="store_true", help="Use /runsync; else async /run + polling.")
     p.add_argument("--debug", action="store_true", help="Print full RunPod responses (secrets redacted).")
     # WhisperX options
@@ -1025,13 +1026,14 @@ def _fetch_segments_for_coverage(s3, bucket: str, stem: str, url_saves: Dict[str
     return None
 
 def main():
+    load_dotenv(find_dotenv(), override=True)
     args = parse_cli()
     audio_path = Path(args.file)
     if not audio_path.is_file():
         sys.exit(f"Input file not found: {audio_path}")
 
     if not (args.endpoint and args.api_key):
-        sys.exit("Missing RunPod --endpoint/--api-key (or SWAMI_RUNPOD_* env)")
+        sys.exit("Missing RunPod --endpoint/--api-key (or RUNPOD_* env)")
 
     pyannote_api_key = args.pyannote_api_key
     pyannote_json_in = getattr(args, "pyannote_json_in", None)

@@ -4,7 +4,7 @@ try:
     from cog import BasePredictor, Input, Path, BaseModel
 except ImportError:  # pragma: no cover
     # Fallback to local stub within the src package
-    from src.cog_stub import BasePredictor, Input, Path, BaseModel
+    from .cog_stub import BasePredictor, Input, Path, BaseModel
 from typing import Any
 from whisperx.audio import N_SAMPLES, log_mel_spectrogram
 from scipy.spatial.distance import cosine
