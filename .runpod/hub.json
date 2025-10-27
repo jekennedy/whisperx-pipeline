@@ -1,0 +1,72 @@
+{
+  "title": "WhisperX Worker",
+  "description": "High-accuracy speech transcription with word-level timestamps, optional alignment, and speaker diarization using WhisperX.",
+  "type": "serverless",
+  "category": "audio",
+  "iconUrl": "https://raw.githubusercontent.com/m-bain/whisperX/main/docs/logo.png",
+  "tags": [
+    "speech-to-text",
+    "transcription",
+    "whisper",
+    "alignment",
+    "diarization",
+    "speaker-identification",
+    "audio"
+  ],
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 30,
+    "presets": [
+      {
+        "name": "Basic Transcription",
+        "description": "Transcribe audio with automatic language detection.",
+        "input": {
+          "model": "large-v3",
+          "align_output": false,
+          "diarization": false,
+          "temperature": 0.0,
+          "debug": true
+        }
+      },
+      {
+        "name": "Transcription with Alignment",
+        "description": "Transcribe audio and produce word-level timestamps.",
+        "input": {
+          "model": "large-v3",
+          "align_output": true,
+          "diarization": false,
+          "temperature": 0.0,
+          "debug": true
+        }
+      },
+      {
+        "name": "Transcription with Diarization",
+        "description": "Full transcription with alignment and speaker diarization. Requires HF token.",
+        "input": {
+          "model": "large-v3",
+          "align_output": true,
+          "diarization": true,
+          "temperature": 0.0,
+          "debug": true
+        }
+      },
+      {
+        "name": "Speaker Identification",
+        "description": "Identify and label speakers using enrolled samples.",
+        "input": {
+          "model": "large-v3",
+          "align_output": true,
+          "diarization": true,
+          "speaker_verification": true,
+          "temperature": 0.0,
+          "debug": true
+        }
+      }
+    ]
+  },
+  "recommended": {
+    "gpu": "NVIDIA RTX 4090 or better",
+    "memory": 24,
+    "storage": 30
+  }
+}

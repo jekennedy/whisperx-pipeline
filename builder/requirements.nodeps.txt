@@ -1,0 +1,6 @@
+ctranslate2==4.6.0
+faster-whisper==1.2.0
+transformers==4.45.2
+tokenizers==0.20.3
+sentencepiece>=0.1.99
+whisperx @ git+https://github.com/m-bain/whisperx.git

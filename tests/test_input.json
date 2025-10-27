@@ -1,0 +1,13 @@
+{
+    "input": {
+      "audio_file": "/app/samples/minute.m4a",
+      "model": "small",
+      "language": "en",
+      "align_output": true,
+      "diarization": true,
+      "min_speakers": null,
+      "max_speakers": null,
+      "temperature": 0.0,
+      "debug": true
+    }
+  }
