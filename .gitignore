@@ -37,7 +37,6 @@ Thumbs.db
 .hf_token
 .archive
 doc.txt
-cog_stub.py
 
 # Project specific
 scripts/pipeline/*.json
