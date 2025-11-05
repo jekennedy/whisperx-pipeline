@@ -42,4 +42,5 @@ doc.txt
 scripts/pipeline/*.json
 scripts/pipeline/audio/*
 scripts/pipeline/transcripts/*
+scripts/filemgt/*
 models/whisperx-vad-segmentation.bin

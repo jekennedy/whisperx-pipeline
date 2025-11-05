@@ -8,6 +8,7 @@ import mimetypes
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple, List
 import re
+import string
 
 import boto3
 from botocore.client import Config
@@ -849,50 +850,86 @@ def _merge_word_confidence_into_segments(
 
     tolerance = 0.12
     used_dg = [False] * len(dg_sorted)
-    dg_pointer = 0
-    matched = 0
-    unmatched_whisper = 0
+    assignments: List[Optional[int]] = [None] * len(whisper_words)
 
-    for w_word in whisper_words:
-        start = w_word["start"]
-        end = w_word["end"]
-        mid = w_word["mid"]
-        while (
-            dg_pointer < len(dg_sorted)
-            and dg_sorted[dg_pointer]["end"] < start - tolerance
-        ):
-            dg_pointer += 1
+    def _normalize_token(token: Optional[str]) -> str:
+        if not token:
+            return ""
+        return "".join(ch for ch in token.lower() if ch.isalnum())
+
+    def _overlap(a_start: float, a_end: float, b_start: float, b_end: float) -> float:
+        return min(a_end, b_end) - max(a_start, b_start)
+
+    # First pass: strict word matches
+    for idx, w_word in enumerate(whisper_words):
+        seg_words = segments[w_word["segment"]].get("words") or []
+        raw_word = seg_words[w_word["word_index"]].get("word") if w_word["word_index"] < len(seg_words) else None
+        norm_word = _normalize_token(raw_word)
+        if not norm_word:
+            continue
         best_idx = None
         best_overlap = -1.0
         best_mid_diff = float("inf")
-        scan_idx = max(0, dg_pointer - 2)
-        while scan_idx < len(dg_sorted):
-            g_word = dg_sorted[scan_idx]
-            if g_word["start"] > end + tolerance:
-                break
-            if used_dg[scan_idx]:
-                scan_idx += 1
+        for dg_idx, g_word in enumerate(dg_sorted):
+            if used_dg[dg_idx]:
                 continue
-            overlap = min(end, g_word["end"]) - max(start, g_word["start"])
+            if norm_word != _normalize_token(g_word.get("word")):
+                continue
+            overlap = _overlap(w_word["start"], w_word["end"], g_word["start"], g_word["end"])
+            if overlap <= 0:
+                continue
             g_mid = (g_word["start"] + g_word["end"]) / 2.0
-            mid_diff = abs(mid - g_mid)
-            if overlap > 0 or mid_diff <= tolerance:
-                if overlap > best_overlap or (
-                    abs(overlap - best_overlap) < 1e-6 and mid_diff < best_mid_diff
-                ):
-                    best_overlap = overlap
-                    best_mid_diff = mid_diff
-                    best_idx = scan_idx
-            scan_idx += 1
+            mid_diff = abs(w_word["mid"] - g_mid)
+            if overlap > best_overlap or (
+                abs(overlap - best_overlap) < 1e-6 and mid_diff < best_mid_diff
+            ):
+                best_overlap = overlap
+                best_mid_diff = mid_diff
+                best_idx = dg_idx
         if best_idx is not None:
+            assignments[idx] = best_idx
             used_dg[best_idx] = True
-            matched += 1
-            seg = segments[w_word["segment"]]
-            seg_words = seg.get("words")
-            if isinstance(seg_words, list):
-                seg_words[w_word["word_index"]]["w_score"] = dg_sorted[best_idx]["confidence"]
-        else:
+
+    # Second pass: fallback by time for unmatched words
+    for idx, w_word in enumerate(whisper_words):
+        if assignments[idx] is not None:
+            continue
+        best_idx = None
+        best_overlap = -1.0
+        best_mid_diff = float("inf")
+        for dg_idx, g_word in enumerate(dg_sorted):
+            if used_dg[dg_idx]:
+                continue
+            overlap = _overlap(w_word["start"], w_word["end"], g_word["start"], g_word["end"])
+            g_mid = (g_word["start"] + g_word["end"]) / 2.0
+            mid_diff = abs(w_word["mid"] - g_mid)
+            if overlap <= 0 and mid_diff > tolerance:
+                continue
+            if overlap > best_overlap or (
+                abs(overlap - best_overlap) < 1e-6 and mid_diff < best_mid_diff
+            ):
+                best_overlap = overlap
+                best_mid_diff = mid_diff
+                best_idx = dg_idx
+        if best_idx is not None:
+            assignments[idx] = best_idx
+            used_dg[best_idx] = True
+
+    matched = 0
+    unmatched_whisper = 0
+    for idx, dg_idx in enumerate(assignments):
+        seg = segments[whisper_words[idx]["segment"]]
+        seg_words = seg.get("words")
+        if not isinstance(seg_words, list):
             unmatched_whisper += 1
+            continue
+        word_entry = seg_words[whisper_words[idx]["word_index"]]
+        if dg_idx is None:
+            word_entry["w_score"] = None
+            unmatched_whisper += 1
+            continue
+        word_entry["w_score"] = dg_sorted[dg_idx]["confidence"]
+        matched += 1
 
     unmatched_deepgram = used_dg.count(False)
 

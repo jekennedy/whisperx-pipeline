@@ -4,6 +4,10 @@
 
 A serverless worker that provides high-quality speech transcription with timestamp alignment and speaker diarization using WhisperX on the RunPod platform.
 
+This repository contains:
+- RunPod worker (`src/`): Runs WhisperX transcription. If you set `diarization=true` when calling the worker directly, it performs diarization using pyannote models hosted on Hugging Face (requires `HF_TOKEN`). Optionally supports speaker verification.
+- Pipeline CLI (`scripts/pipeline/whisperx_pipeline.py`): Uploads audio to S3/R2, invokes your RunPod endpoint for transcription, and by default disables worker‑side diarization. When `--diarization` is set, it calls the pyannote SaaS (precision‑2 recommended, often more accurate) and merges speaker labels into the transcript. Optionally adds Deepgram word‑level confidence (`word_confidence` on words, segment `confidence_summary`/flags, and `unclear_intervals`).
+
 ## Features
 
 - Automatic speech transcription with WhisperX
@@ -116,13 +120,13 @@ A serverless worker that provides high-quality speech transcription with timesta
 
 ```bash
 aws --endpoint-url https://s3api-<region>.runpod.io \
-    s3 presign s3://<bucket>/speaker-samples/swami-1.m4a --expires-in 86400
+    s3 presign s3://<bucket>/speaker-samples/speaker-1.wav --expires-in 86400
 ```
 
 - Naming: If you omit `name`, the worker derives it from the sample URL in this order:
-  - Query parameter `?name=swami`
-  - Fragment `#swami`
-  - Filename stem (e.g., `swami-1`)
+  - Query parameter (e.g., `?name=alice`)
+  - Fragment (e.g., `#alice`)
+  - Filename stem (e.g., `speaker-1`)
 
 - Example with derived names in URLs:
 
@@ -133,8 +137,8 @@ aws --endpoint-url https://s3api-<region>.runpod.io \
     "diarization": true,
     "speaker_verification": true,
     "speaker_samples": [
-      { "url": "https://…/swami-sample-1.m4a?name=swami" },
-      { "url": "https://…/swami-sample-2.m4a#swami" }
+      { "url": "https://…/speaker-1.wav?name=alice" },
+      { "url": "https://…/speaker-2.wav#bob" }
     ]
   }
 }
@@ -144,7 +148,23 @@ The worker enrolls each sample and relabels diarized segments to the most likely
 
 ## Pipeline CLI
 
-Use `scripts/pipeline/whisperx_pipeline_pyannote_api.py` to run the full pipeline locally (upload to S3/R2, invoke the RunPod endpoint, enrich with pyannote diarization, and annotate Deepgram confidence). Key CLI options:
+Use `scripts/pipeline/whisperx_pipeline.py` to run the full pipeline locally (upload to S3/R2, invoke your RunPod endpoint for WhisperX transcription, optionally add diarization via the pyannote API, and optionally annotate Deepgram word confidences).
+
+### Diarization: two options
+
+- Worker-side (WhisperX built‑in): when you call the RunPod worker directly with `diarization=true`, WhisperX performs diarization using pyannote models hosted on Hugging Face. This path requires `HF_TOKEN` (and acceptance of the model terms). It’s simple and self‑contained.
+- Pipeline-side (pyannote API): the local CLI disables worker‑side diarization and, if `--diarization` is enabled, calls the pyannote SaaS. In practice, pyannote’s hosted `precision-2` model can be more accurate than running the open models locally. You can reuse an existing job with `--pyannote-json-in` to avoid new API charges.
+
+### Deepgram confidence overlay (optional)
+
+Deepgram adds word‑level confidence that WhisperX/pyannote don’t provide. The pipeline can call Deepgram on the same audio URL and align those confidences to Whisper words by timestamp, annotating:
+- `words[*].word_confidence`
+- `segments[*].confidence_summary` (avg/min/low‑confidence coverage) and `segments[*].confidence_flag` ("low"/"high")
+- `unclear_intervals` (merged spans of low‑confidence speech)
+
+You can enable this with `--deepgram-api-key`, or reuse a saved payload via `--deepgram-json-in`.
+
+Key CLI options:
 
 - **Storage / S3**
   - `--s3-endpoint` (defaults to `STORAGE_ENDPOINT`)
@@ -166,13 +186,13 @@ Use `scripts/pipeline/whisperx_pipeline_pyannote_api.py` to run the full pipelin
   - `--num-speakers`, `--min-speakers`, `--max-speakers`
   - `--speaker-verification`, `--speaker-sample` (repeatable)
   - `--params-json` – additional worker payload fields
-- **pyannote API**
-  - `--pyannote-api-key` (`PYANNOTE_API_KEY`): bearer token for the hosted diarization service.
-  - `--pyannote-model`: choose the SaaS model (`precision-1`, `precision-2` default, or `community-1`).
-  - `--pyannote-exclusive`: request single-speaker (non-overlapping) diarization.
-  - `--pyannote-poll-interval`: seconds between status checks while a job is running.
-  - `--pyannote-timeout`: fail if the job hasn’t finished within this many seconds.
-  - `--pyannote-json-in`: skip the API call and reuse a previously saved `<stem>.pyannote.job.json`.
+- **Diarization (pyannote API flags)**
+  - `--pyannote-api-key` (`PYANNOTE_API_KEY`): bearer token for the SaaS.
+  - `--pyannote-model`: `precision-1`, `precision-2` (default), or `community-1`.
+  - `--pyannote-exclusive`: request single‑speaker (non‑overlapping) diarization.
+  - `--pyannote-poll-interval`: seconds between status checks.
+  - `--pyannote-timeout`: overall timeout in seconds.
+  - `--pyannote-json-in`: reuse a saved `<stem>.pyannote.job.json` instead of calling the API.
 - **Deepgram Confidence**
   - `--deepgram-api-key` (`DEEPGRAM_API_KEY`): enables the Deepgram call; omit it if reusing cached JSON.
   - `--deepgram-json-in`: feed a stored Deepgram response (e.g. `<stem>.deepgram.json`) to avoid new charges.
@@ -184,7 +204,59 @@ Use `scripts/pipeline/whisperx_pipeline_pyannote_api.py` to run the full pipelin
   - `--download-transcript`
   - `--download-dir`
 
-The script overwrites the primary transcript (`<stem>.json`) and segments (`<stem>.segments.json`) with the combined Whisper + pyannote + Deepgram results, and also stores helper artifacts (`<stem>.pyannote.job.json`, `<stem>.deepgram.json`) alongside optional SRT/VTT files.
+The pipeline overwrites the primary transcript (`<stem>.json`) and segments (`<stem>.segments.json`) with the combined Whisper + pyannote + Deepgram results, and also stores helper artifacts (`<stem>.pyannote.job.json`, `<stem>.deepgram.json`) alongside optional SRT/VTT files.
+
+### Examples
+
+- Worker‑side diarization (call the worker directly)
+
+  Input JSON (requires `HF_TOKEN` set in the worker environment):
+
+  ```json
+  {
+    "input": {
+      "audio_file": "https://…/audio.wav",
+      "model": "large-v3",
+      "align_output": true,
+      "diarization": true,
+      "huggingface_access_token": "<HF_TOKEN>"
+    }
+  }
+  ```
+
+- Pipeline with pyannote API diarization (recommended for accuracy)
+
+  With `.env` configured (RUNPOD_* / STORAGE_* / PYANNOTE_API_KEY):
+
+  ```bash
+  python3 scripts/pipeline/whisperx_pipeline.py /path/to/audio.wav \
+    --diarization --pyannote-api-key "$PYANNOTE_API_KEY"
+  ```
+
+- Pipeline with pyannote + Deepgram confidence
+
+  ```bash
+  python3 scripts/pipeline/whisperx_pipeline.py /path/to/audio.wav \
+    --diarization --pyannote-api-key "$PYANNOTE_API_KEY" \
+    --deepgram-api-key "$DEEPGRAM_API_KEY" --word-confidence-low-threshold 0.6
+  ```
+
+### Enabling configuration via `.env`
+
+Both the worker and the pipeline can load environment variables from a `.env` file at the repo root (via `python-dotenv`). Common keys include:
+
+```
+RUNPOD_ENDPOINT=…
+RUNPOD_API_KEY=…
+STORAGE_ENDPOINT=…
+STORAGE_BUCKET=…
+STORAGE_ACCESS_KEY=…
+STORAGE_SECRET_KEY=…
+HF_TOKEN=…
+PYANNOTE_API_KEY=…
+DEEPGRAM_API_KEY=…
+```
+If the variable is already set in the shell, you can let `.env` override it by calling `load_dotenv(find_dotenv(), override=True)` in local scripts.
 ## Output Format
 
 The service returns a JSON object structured as follows:
